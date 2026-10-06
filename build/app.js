@@ -52,7 +52,7 @@ function servicesFor(a,b){
   });
   /* a train that does not run on the chosen date is not the quickest option,
      whatever the timetable says */
-  const runnable=c=>runsOn(ITS[c.i],depDate.value)?0:1;
+  const runnable=c=>runsOn(ITS[c.i],depDate.value,c.o)?0:1;
   out.sort((x,y)=>runnable(x)-runnable(y)||x.mins-y.mins);
   return out;
 }
@@ -63,37 +63,34 @@ const MIN_CONNECT=30;                     /* minutes; anything tighter is not a 
 /* A change is not thirty minutes just because you would like it to be. Work the
    wait out of the timetable, and out of the calendar: connecting onto a train
    that runs three days a week can mean sitting for two days. */
-const clockMin=(it,idx)=>{
-  const hm=it.dep.split(":").map(Number);
-  return ((hm[0]*60+hm[1]+it.s[idx][1])%1440+1440)%1440;
-};
-const startWeekday=()=>weekdayOf(depDate.value);
-/* Walk the legs in order from a starting weekday, returning each wait. */
+/* Keep an unwrapped agency-clock minute axis from the first train's service
+   date. A connecting stop's departure may be days after its train originated;
+   check that originating date's flag, not the interchange's calendar weekday.
+   Returned offsets are local boarding dates, as expected by loadLeg(). */
 function chainWaits(legs){
-  let wd=startWeekday(), clock=clockMin(ITS[legs[0].i],legs[0].o), waits=[];
-  let dayOff=0, offsets=[0];
+  const first=legs[0], date=depDate.value||"2026-01-01";
+  const base=boardingRun(ITS[first.i],first.o,date).date;
+  let clock=departureMinutes(ITS[first.i],first.o), waits=[], offsets=[0];
   for(let n=0;n<legs.length;n++){
     const leg=legs[n];
-    const arrAbs=clock+leg.mins;
-    dayOff+=Math.floor(arrAbs/1440);
-    wd=(wd+Math.floor(arrAbs/1440))%7;
-    clock=((arrAbs%1440)+1440)%1440;
+    clock+=leg.mins;
     const next=legs[n+1];
     if(!next) break;
-    const dep=clockMin(ITS[next.i],next.o), dy=ITS[next.i].dy||"1111111";
+    const it=ITS[next.i], minutes=departureMinutes(it,next.o);
+    const dep=((minutes%1440)+1440)%1440, dy=it.dy||"1111111";
+    const day=Math.floor(clock/1440), runDay=Math.floor(minutes/1440);
     let w=null;
     for(let k=0;k<8;k++){
-      if(dy[(wd+k)%7]!=="1") continue;
-      const cand=k*1440+dep-clock;
+      const serviceDate=shiftDate(base,day+k-runDay);
+      if(dy[weekdayOf(serviceDate)]!=="1") continue;
+      const cand=(day+k)*1440+dep-clock;
       if(cand>=MIN_CONNECT){ w=cand; break; }
     }
     if(w===null) w=7*1440;                 /* nothing within a week; treat as unusable */
     waits.push(w);
-    const abs=clock+w;
-    dayOff+=Math.floor(abs/1440);
-    wd=(wd+Math.floor(abs/1440))%7;
-    clock=((abs%1440)+1440)%1440;
-    offsets.push(dayOff);
+    clock+=w;
+    const localDate=ymdIn(agencyInstant(base,clock),TZ[ST[it.s[next.o][0]][3]]);
+    offsets.push(Math.round((Date.parse(localDate+"T12:00:00Z")-Date.parse(date+"T12:00:00Z"))/86400000));
   }
   return {waits:waits,offsets:offsets};
 }
@@ -142,7 +139,7 @@ function connectionsFor(a,b){
     one.push(withWaits([x],[v,w]));
   });
   /* a journey that cannot start on the chosen day is not the quickest one */
-  const startsToday=c=>runsOn(ITS[c.legs[0].i],depDate.value)?0:1;
+  const startsToday=c=>runsOn(ITS[c.legs[0].i],depDate.value,c.legs[0].o)?0:1;
   if(one.length){ one.sort((p,q)=>startsToday(p)-startsToday(q)||p.total-q.total); return dedupe(one,3); }
   /* nothing direct enough: allow a middle train between two interchanges */
   const two=[];
@@ -281,7 +278,7 @@ function loadLeg(c,dayOffset){
    there is something to say: on the Corridor every option is zero. */
 function labelRoutes(){
   [...routeSel.options].forEach(o=>{
-    const p=o.value.split(":").map(Number), it=ITS[p[0]], days=runDays(it);
+    const p=o.value.split(":").map(Number), it=ITS[p[0]], days=runDays(it,depDate.value,p[1]);
     const dead=legHours(p[0],p[1],p[2],carrier).dead;
     o.textContent=it.n+(it.tr?" ("+it.tr+")":"")+" · "+fmtDur(rideMins(it,p[1],p[2])/60)+
       (days.length<7?" · "+days.join("/"):"")+
@@ -390,14 +387,13 @@ function computeTNow(){
    "live now" on today's date reports a departure still to come. Offer the run
    that is actually out there rather than guessing, since someone waiting at the
    station for tomorrow's train wants today's date left alone. */
-const shiftDate=(str,days)=>{const p=str.split("-").map(Number);
-  return new Date(Date.UTC(p[0],p[1]-1,p[2]+days)).toISOString().slice(0,10);};
 function runAboardNow(){
   if(!depDate.value||!LEG) return null;
   const depHM=IT.dep.split(":").map(Number), depMin=depHM[0]*60+depHM[1]+IT.s[O][1];
   const oTz=TZ[ST[IT.s[O][0]][3]], now=Date.now();
   for(let d=1;d<=Math.ceil(LEG.TOTAL/24);d++){
     const day=shiftDate(depDate.value,-d);
+    if(!runsOn(IT,day,O)) continue;
     const inst=originInstant(day,depMin,oTz).inst.getTime();
     if(now>=inst&&now<=inst+LEG.TOTAL*3600000)
       return {date:day,label:new Intl.DateTimeFormat("en-US",{weekday:"long",timeZone:oTz}).format(new Date(inst))};
@@ -697,9 +693,9 @@ function rebuild(){
   if(+scrub.value>LEG.TOTAL) scrub.value=0;
   const a=LEG.stops[0], b=LEG.stops[LEG.stops.length-1];
   $("legTitle").textContent=a.short+" → "+b.short;
-  const days=runDays(IT);
+  const days=runDays(IT,depDate.value,O);
   const runsTxt = days.length>=7 ? "" :
-    (runsOn(IT,depDate.value)
+    (runsOn(IT,depDate.value,O)
       ? ("This service runs "+listDays(days)+".")
       : ("<b>This service does not run that day.</b> It runs "+listDays(days)+"."));
   const hop=impossibleHop();

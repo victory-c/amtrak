@@ -45,16 +45,25 @@ const FEED_HORIZON=60;                      /* days either side we will vouch fo
 /* Not every train runs every day: the Sunset Limited goes three times a week,
    and the Texas Eagle's through cars to Los Angeles likewise. */
 const DAY3=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-const runDays=it=>DAY3.filter((d,i)=>(it.dy||"1111111")[i]==="1");
+const shiftDate=(str,days)=>{const p=str.split("-").map(Number);
+  return new Date(Date.UTC(p[0],p[1]-1,p[2]+days)).toISOString().slice(0,10);};
+/* Show running days at the boarding stop, in the selected week. The originating
+   service's Monday can be this stop's Tuesday (or its Sunday, farther west). */
+function runDays(it,dateStr,o=0){
+  if(!dateStr) return DAY3.filter((d,i)=>(it.dy||"1111111")[i]==="1");
+  const monday=shiftDate(dateStr,-weekdayOf(dateStr));
+  return DAY3.filter((d,i)=>runsOn(it,shiftDate(monday,i),o));
+}
 /* Monday-based weekday, to index the seven running-day flags */
 function weekdayOf(dateStr){
   if(!dateStr) return 0;
   const p=dateStr.split("-").map(Number);
   return (new Date(p[0],p[1]-1,p[2]).getDay()+6)%7;
 }
-function runsOn(it,dateStr){
+function runsOn(it,dateStr,o=0){
   if(!dateStr) return true;
-  return ((it.dy||"1111111")[weekdayOf(dateStr)]==="1");
+  const serviceDate=boardingRun(it,o,dateStr).date;
+  return ((it.dy||"1111111")[weekdayOf(serviceDate)]==="1");
 }
 const listDays=a=>a.length>1?a.slice(0,-1).join(", ")+" and "+a[a.length-1]:a[0];
 /* The feed's names are inconsistent for a few big stations, and three Boston
@@ -149,6 +158,14 @@ function originInstant(dateStr,originMin,oTz){
     }
   }
   return {inst:inst,date:base};
+}
+function departureMinutes(it,o){
+  const hm=it.dep.split(":").map(Number);
+  return hm[0]*60+hm[1]+it.s[o][1];
+}
+/* Availability and leg construction must refer to the same originating run. */
+function boardingRun(it,o,dateStr){
+  return originInstant(dateStr,departureMinutes(it,o),TZ[ST[it.s[o][0]][3]]);
 }
 const ZAB={"America/Los_Angeles":"PT","America/Denver":"MT","America/Chicago":"CT","America/New_York":"ET"};
 
@@ -259,11 +276,10 @@ let IT=null, O=0, E=0, LEG=null, DELAY=0;
 /* ---------- build the leg the user picked ---------- */
 function buildLeg(){
   const stops=IT.s, o=O, e=E;
-  const oTz=TZ[ST[stops[o][0]][3]];
   /* GTFS stop_times are in the agency's zone (Eastern for Amtrak), not the stop's.
      Elapsed time is therefore the raw difference; only the displayed clock changes zone. */
   const depHM=IT.dep.split(":").map(Number), depMin=depHM[0]*60+depHM[1];
-  const start=originInstant($("depDate").value,depMin+stops[o][1],oTz);
+  const start=boardingRun(IT,o,$("depDate").value);
   const inst=start.inst;
   /* Each stop is resolved from its own wall-clock time on the run's start date.
      Adding raw minutes instead would be an hour out either way across a

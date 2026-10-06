@@ -52,7 +52,8 @@ function journeyLegContext(){
   const slack=(dep-realArr)/60000;
   const tz=TZ[ST[opt.vias[i]][3]];
   return {via:opt.vias[i],wait:wait,slack:slack,nextName:ITS[next.i].n,
-          nextDays:runDays(ITS[next.i]),depTime:fmtLocal(dep,tz).time};
+          nextDays:runDays(ITS[next.i],shiftDate(J.start||depDate.value,
+            (opt.offsets&&opt.offsets[i+1])||0),next.o),depTime:fmtLocal(dep,tz).time};
 }
 function agTipList(t){
   const tips=[],CN=CARRIER_NAME[carrier],run=covRun(t),

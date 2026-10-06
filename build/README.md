@@ -50,6 +50,18 @@ Running days come from `calendar.txt`, unioned across every trip sharing a
 terminal pair, so the Sunset Limited reads Mon/Wed/Sat westbound and Wed/Fri/Sun
 eastbound rather than a route-wide blur.
 
+Those flags describe the originating service date, not necessarily the date a
+passenger boards. Availability, displayed running days and connection checks
+resolve that service date from the chosen stop and local boarding date. For
+example, the westbound Sunset Limited at Alpine on Tuesday belongs to Monday's
+originating run. Connection offsets are local dates at each boarding station.
+This does not change the existing elapsed-time/DST arithmetic or add GTFS
+calendar exceptions. Run the offline runtime regressions with Node.js 18+:
+
+```bash
+node --test build/tests/service-days.test.cjs
+```
+
 Three GTFS details the build depends on:
 
 - **Times are in the agency timezone (Eastern), not local to each stop.** Elapsed
