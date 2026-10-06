@@ -80,6 +80,22 @@ Coverage is sampled roughly every 25 km, so a long nonstop leg gets real
 resolution rather than a fixed handful of samples: the Auto Train's single
 1,377 km run is 55 spans, not 10.
 
+Those spans divide cumulative track distance, not the number of GTFS shape
+vertices. `coverage_geometry.py` interpolates each midpoint along the track and
+retains the interior vertices of the same distance window for the terrain
+calculation. Adding collinear or duplicate vertices must not move the samples
+or invent turns. The page still assigns equal running time to equal-distance
+spans: this is a constant-speed approximation within each station-to-station
+hop, not a model of local speed limits or acceleration.
+
+The sampling change applies when `build_all.py` rebuilds `data.json`; reusing the
+embedded data with `assemble.sh` does not recalculate coverage. The geometry and
+builder regression tests need only Python's standard library and small fixtures:
+
+```bash
+python3 -m unittest discover -s build/tests -p test_coverage_geometry.py -v
+```
+
 `build_pat.py` keeps one itinerary per terminal pair per direction, dropping
 short-turn variants whose stops are a subset of a longer one, so real branches
 (Empire Builder to Seattle vs Portland) survive but 761 Northeast Regional trips

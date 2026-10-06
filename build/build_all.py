@@ -1,4 +1,5 @@
 import csv,collections,json,math,sys,os
+from coverage_geometry import hav, turnrate, distance_samples
 HERE=os.path.dirname(os.path.abspath(__file__))
 _params="cov_params.json" if os.path.exists("cov_params.json") else os.path.join(HERE,"cov_params.json")
 P=json.load(open(_params)); geo=json.load(open("geo_raw.json"))
@@ -8,9 +9,6 @@ sh=collections.defaultdict(list)
 for r in csv.DictReader(open("gtfs/shapes.txt")):
     sh[r["shape_id"]].append((int(r["shape_pt_sequence"]),float(r["shape_pt_lat"]),float(r["shape_pt_lon"])))
 SHAPE={k:[(a,b) for _,a,b in sorted(v)] for k,v in sh.items()}
-def hav(a,b,c,d):
-    p=math.pi/180
-    return 12742*math.asin(math.sqrt(max(0.0,0.5-math.cos((c-a)*p)/2+math.cos(a*p)*math.cos(c*p)*(1-math.cos((d-b)*p))/2)))
 GRID={}
 for lat,lng,pop,nm in geo["cities"]: GRID.setdefault((int(lat),int(lng)),[]).append((lat,lng,pop))
 A,B,C,Dn,K,S,Tg,Ts=P["A"],P["B"],P["C"],P["D"],P["K"],P["S"],P["Tg"],P["Ts"]
@@ -38,15 +36,6 @@ def rdp(pts,eps):
         if dd>dmax: dmax,idx=dd,i
     if dmax>eps: return rdp(pts[:idx+1],eps)[:-1]+rdp(pts[idx:],eps)
     return [pts[0],pts[-1]]
-def turnrate(seg):
-    path=sum(hav(seg[j][0],seg[j][1],seg[j+1][0],seg[j+1][1]) for j in range(len(seg)-1))
-    if path<0.5 or len(seg)<3: return 0.0,max(path,0.0)
-    t=0.0
-    for j in range(1,len(seg)-1):
-        h1=math.atan2(seg[j][1]-seg[j-1][1],seg[j][0]-seg[j-1][0])
-        h2=math.atan2(seg[j+1][1]-seg[j][1],seg[j+1][0]-seg[j][0])
-        dh=abs(math.degrees(h2-h1)); t+=min(dh,360-dh)
-    return t/path,path
 # Long bores where no population/terrain proxy can see the blackout: [lat,lng,km,status]
 OVERRIDE=[(39.902,-105.642,11,"d"),   # Moffat Tunnel, CO  (6.2 mi)
           (47.750,-120.950,11,"d"),   # Cascade Tunnel, WA (7.8 mi)
@@ -112,14 +101,14 @@ for p in R["patterns"]:
             simp=rdp(raw,EPS)
             simp[0]=(ST[codes[i]][1],ST[codes[i]][2]); simp[-1]=(ST[codes[i+1]][1],ST[codes[i+1]][2])
             poly.extend([[round(a,4),round(b,4)] for a,b in simp[1:]]); idx.append(len(poly)-1)
-            tr,km=turnrate(raw); seglen.append(round(km,1))
+            _,km=turnrate(raw); seglen.append(round(km,1))
             n=max(1,min(60,int(round(km/25.0))))   # long nonstop legs deserve real resolution
             segn.append(n)
-            for k in range(n):
-                a=raw[int(len(raw)*k/n)]; b=raw[min(len(raw)-1,int(len(raw)*(k+1)/n))]
-                sub=raw[int(len(raw)*k/n):max(int(len(raw)*(k+1)/n)+1,int(len(raw)*k/n)+2)]
-                str_,_=turnrate(sub) if len(sub)>2 else (tr,0)
-                mlat=(a[0]+b[0])/2; mlng=(a[1]+b[1])/2
+            # Equal running-time shares in core.js correspond to equal track
+            # distances, not equal numbers of GTFS vertices. Sample on the track
+            # itself and measure terrain within the same distance window.
+            for (mlat,mlng),sub in distance_samples(raw,n):
+                str_,_=turnrate(sub)
                 base=popstrength(mlat,mlng)/(1+max(0.0,str_-K)/S)
                 ov=override(mlat,mlng)
                 for c2,f in F.items():
