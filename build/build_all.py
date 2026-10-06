@@ -143,7 +143,12 @@ for p in R["patterns"]:
                 "s":[[x[0],x[1],x[2]] for x in p["stops"]],"p":poly,"i":idx,"sn":segn,"kl":seglen,
                 "cv":{k:"".join(v) for k,v in cov.items()}})
 print("itineraries:",len(its),"polyline points:",totpts,"stops:",len(ST),"tz:",tzs)
-json.dump({"tz":tzs,"stops":ST,"its":its,"states":geo["states"],"labels":geo["labels"],
-           "cities":[[c[0],c[1],c[2],c[3]] for c in geo["cities"][:260]]},
-          open("data.json","w"),separators=(",",":"))
+data={"tz":tzs,"stops":ST,"its":its,"states":geo["states"],"labels":geo["labels"],
+      "cities":[[c[0],c[1],c[2],c[3]] for c in geo["cities"][:260]]}
+from validate import validate, print_report
+report=validate(data)
+print_report(report)
+if report.failed():
+    sys.exit("build_all.py: data validation failed; data.json was not written")
+json.dump(data,open("data.json","w"),separators=(",",":"))
 import os;print("data.json size: %.0f KB"%(os.path.getsize("data.json")/1024))

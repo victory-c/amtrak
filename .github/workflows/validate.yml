@@ -1,0 +1,16 @@
+name: Validate data
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python3 -m unittest discover -s build/tests -v
+      - run: python3 build/validate.py
+      - run: build/assemble.sh
+      - run: git diff --exit-code -- index.html

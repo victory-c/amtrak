@@ -10,6 +10,56 @@
 - `app.js` — station-first picker, live position, shareable URL, Leaflet map
 - `style.css`, `body.html`, `head_extra.html` — page shell, favicon and link-preview metadata
 - `assemble.sh` — concatenates the above plus `data.json` into `index.html`
+- `validate.py` — validates generated or embedded network data before output is written
+
+## Validation
+
+Python 3.9+ and a system IANA timezone database are required. No source feeds,
+network access, or third-party Python packages are needed on systems with that
+database (including macOS and the Ubuntu CI runner).
+
+```bash
+python3 build/validate.py                 # default input: repository index.html
+python3 build/validate.py /path/to/data.json
+python3 build/validate.py --json          # all findings, with codes and locations
+python3 build/validate.py --strict        # warnings also return exit status 1
+python3 -m unittest discover -s build/tests -v
+```
+
+`build_all.py` and `assemble.sh` run the same validator before opening their output
+file for writing, including when assembly reuses the embedded data. CI runs the
+tests and validator, then checks that assembly reproduces the committed HTML.
+
+Errors include malformed station or itinerary records, duplicate JSON keys,
+invalid coordinates or timezone references, unknown stations, negative dwell,
+nonpositive travel time, disconnected station anchors, invalid segment lengths,
+and missing, extra, or invalid carrier samples. Coverage samples must partition
+each hop; intermediate dwell fills the interval between arrival and departure.
+The resulting intervals must cover the full departure-to-arrival duration, with
+no gaps or overlaps and with neither endpoint's dwell included.
+
+Warnings include repeated stations, missing region fields, unused stations,
+coordinates outside the expected continental service area, speeds above 200 km/h
+(the `core.js` threshold; override with `--max-kmh`), and track distances shorter
+than straight-line station distance by more than the larger of 1 km or 2%.
+That distance tolerance allows small discrepancies from shape snapping and rounding.
+Warnings are not suppressed or corrected automatically. The current snapshot has
+one speed warning, 53 short-distance warnings and 15 missing-region warnings, so
+strict mode intentionally fails until those source-data findings are resolved.
+Normal mode reports `PASS` alongside its warning count; it means no structural
+errors, not that the source data is free of anomalies.
+
+The scope is the compact data schema. Travel time uses the GTFS agency clock,
+including times beyond midnight, without subtracting station timezone offsets.
+The legacy `8:20:` departure encoding produced by slicing single-digit GTFS hours
+is accepted because the app reads its first two fields. The station-pair count is
+the number of forward pairs represented within itineraries, not unique network
+pairs or a test of multi-train routing. Date-specific DST conversion in `core.js`
+is not exercised by this validator. Region abbreviations are checked, but actual
+state/province membership and track connectivity between polyline vertices need
+authoritative geographic data: the simplified map boundaries are not accurate
+enough for that check. Coverage validation checks completeness, not signal-model
+accuracy.
 
 ## Data
 

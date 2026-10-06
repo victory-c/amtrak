@@ -53,3 +53,8 @@ has the details, including what was tried and did not work.
 `build/assemble.sh`. Data comes from Amtrak's published GTFS feed, US Census
 state boundaries, and GeoNames. None of it is vendored here. See
 [build/README.md](build/README.md).
+
+Run `python3 build/validate.py` to check the embedded network without downloading
+the feeds. Both build steps validate data before writing output; structural errors
+fail the build, while suspicious source data is reported as warnings. Use
+`--strict` to fail on warnings too, or `--json` for the complete report.

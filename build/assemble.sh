@@ -38,6 +38,15 @@ if reuse:
     print("reusing the data already in index.html")
 else:
     DATA_TEXT=io.open(data,encoding="utf-8").read()
+sys.path.insert(0,src)
+from validate import parse_data, validate, print_report
+try:
+    report=validate(parse_data(DATA_TEXT))
+except ValueError as exc:
+    sys.exit("assemble.sh: invalid data: " + str(exc))
+print_report(report)
+if report.failed():
+    sys.exit("assemble.sh: data validation failed; index.html was not written")
 html="".join([
  '<!DOCTYPE html>\n<html lang="en" data-theme="dark">\n<head>\n'
  '<meta charset="UTF-8">\n'
